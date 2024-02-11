@@ -1,0 +1,82 @@
+#!/usr/bin/env ruby
+
+require 'tty-prompt'
+require 'openai'
+require 'date'
+require 'csv'
+
+collection_media_path = ENV['ANKI_MEDIA_PATH']
+unless collection_media_path
+  puts "Provide ANKI_MEDIA_PATH"
+end
+
+open_ai_key = ENV['OPENAI_API_KEY']
+unless open_ai_key
+  puts 'Provide OPENAI_API_KEY'
+  exit
+end
+
+output_path = ENV['DECK_OUTPUT_PATH']
+unless output_path
+  puts 'Provide DECK_OUTPUT_PATH'
+  exit
+end
+
+prompt = TTY::Prompt.new
+german_word = ARGV[0]
+unless german_word
+  german_word = prompt.ask("Enter german word or phrase:")
+
+  unless german_word
+    puts 'No word provided. Exiting.'
+    exit
+  end
+end
+
+client = OpenAI::Client.new(access_token: open_ai_key)
+
+response = client.chat(
+  parameters: {
+    model: 'gpt-3.5-turbo-1106',
+    response_format: { type: 'json_object' },
+    messages: [{ role: 'user', content: "Here is a german word or phrase: '#{german_word}'. For each possible meaning of it, generate a few simple examples using it. If word is a verb, example should be with verb in Präsens, Präteritum and Perfekt. If word is a noun - in singular and plural forms. Produce it in JSON format. Top level field should be 'meanings' (array). Each array element is an object with two fields: 'meaning' (meaning of the word in a given context) and 'example_sentences' (array). 'example_sentences' array consists of objects each with two field: 'german_sentence' and 'english_translation'." }],
+    temperature: 0.7,
+  }
+)
+response_message = JSON.parse(response.dig('choices', 0, 'message', 'content'))
+
+examples_to_save = []
+choices = {}
+choice_index = 0
+response_message['meanings'].each.with_index(1) do |meaning, index|
+  meaning['example_sentences'].each do |example|
+    choices["#{meaning['meaning']} - #{example['german_sentence']} => #{example['english_translation']}"] = choice_index
+    choice_index += 1
+
+    examples_to_save.push(example)
+  end
+end
+
+selected_options = prompt.multi_select("Select sentences to save:", choices, echo: false)
+examples_to_save = examples_to_save.values_at(*selected_options)
+
+VOICES = ['onyx', 'alloy', 'nova', 'shimmer']
+CSV.open(output_path, "a", col_sep: "\t") do |csv|
+  examples_to_save.each.with_index do |example, index|
+    response = client.audio.speech(
+      parameters: {
+        model: "tts-1",
+        input: example['german_sentence'],
+        voice: VOICES.shuffle.first
+      }
+    )
+    mp3_file_name = "#{german_word}_#{DateTime.now.strftime('%Q')}.mp3"
+    mp3_output_path = "#{collection_media_path}/#{mp3_file_name}"
+
+    File.binwrite(mp3_output_path, response)
+
+    front = "#{example['german_sentence']} (#{german_word}) [sound:#{mp3_file_name}]"
+    back = example['english_translation']
+    csv << [front, back]
+  end
+end
