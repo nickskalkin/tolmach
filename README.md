@@ -17,3 +17,7 @@ Set required environment variables:
 - `OPENAI_API_KEY`
 
 ## Usage
+
+```
+./tolmach [optional:german word]
+```
