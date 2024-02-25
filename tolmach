@@ -39,7 +39,7 @@ response = client.chat(
   parameters: {
     model: 'gpt-3.5-turbo-1106',
     response_format: { type: 'json_object' },
-    messages: [{ role: 'user', content: "Here is a german word or phrase: '#{german_word}'. For each possible meaning of it, generate a few simple examples using it. If word is a verb, example should be with verb in Präsens, Präteritum and Perfekt. If word is a noun - in singular and plural forms. Produce it in JSON format. Top level field should be 'meanings' (array). Each array element is an object with two fields: 'meaning' (meaning of the word in a given context) and 'example_sentences' (array). 'example_sentences' array consists of objects each with two field: 'german_sentence' and 'english_translation'." }],
+    messages: [{ role: 'user', content: "Here is a german word or phrase: '#{german_word}'. For each possible meaning of it, generate a few simple examples using it (examples have to be in russian language). If word is a verb, example should be with verb in Präsens, Präteritum and Perfekt. If word is a noun - you have to provide examples both in singular and plural forms. Produce results in JSON format. Top level field should be 'meanings' (array). Each array element is an object with two fields: 'meaning' (meaning of the word in a given context) and 'example_sentences' (array). 'example_sentences' array consists of objects each with two field: 'german_sentence' and 'translation'." }],
     temperature: 0.7,
   }
 )
@@ -50,7 +50,7 @@ choices = {}
 choice_index = 0
 response_message['meanings'].each.with_index(1) do |meaning, index|
   meaning['example_sentences'].each do |example|
-    choices["#{meaning['meaning']} - #{example['german_sentence']} => #{example['english_translation']}"] = choice_index
+    choices["#{meaning['meaning']} - #{example['german_sentence']} => #{example['translation']}"] = choice_index
     choice_index += 1
 
     examples_to_save.push(example)
@@ -58,6 +58,8 @@ response_message['meanings'].each.with_index(1) do |meaning, index|
 end
 
 selected_options = prompt.multi_select("Select sentences to save:", choices, echo: false)
+# TODO: if no selected options - ask if should generate new
+
 examples_to_save = examples_to_save.values_at(*selected_options)
 
 VOICES = ['onyx', 'alloy', 'nova', 'shimmer']
@@ -76,7 +78,9 @@ CSV.open(output_path, "a", col_sep: "\t") do |csv|
     File.binwrite(mp3_output_path, response)
 
     front = "#{example['german_sentence']} (#{german_word}) [sound:#{mp3_file_name}]"
-    back = example['english_translation']
+    back = example['translation']
     csv << [front, back]
   end
 end
+
+# TODO: summary
